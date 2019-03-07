@@ -21,10 +21,11 @@ credit_mapping <- read_xlsx("credit_mapping.xlsx")
 key <- read_xlsx("key.xlsx", col_names = TRUE)
 issuer <- read_xlsx("Issuers.xlsx", col_names = TRUE)
 
-pool <- bdp(list$id, key$Key) %>% 
+pool <- bdp(list$id, key$Key) 
+
+poo1 <- pool %>%
   mutate(id = list$id) %>%
-  left_join(issuer) %>%
-  select(id, TICKER, SECTOR, RTG_SP, RTG_MOODY, RTG_FITCH, BB_COMPOSITE) %>%
+  select(id, TICKER, RTG_SP, RTG_MOODY, RTG_FITCH, BB_COMPOSITE) %>%
   mutate(MOODY = gsub("(\\*-|\\(|\\)|u|NR|P| |e|WR)", "", RTG_MOODY),
          SP = gsub("(\\*|\\*-|u|NR| )", "", RTG_SP),
          FITCH = gsub("(\\*|\\*-|u|NR|WD| )", "", RTG_FITCH),
@@ -32,18 +33,20 @@ pool <- bdp(list$id, key$Key) %>%
   gather(`MOODY`, `SP`, `FITCH`, `BBG`,
          key = "agent", value = "RTG") %>%
   left_join(credit_mapping) %>%
-  group_by(id, TICKER, SECTOR) %>%
-  summarise(credit = round(mean(credit, na.rm = TRUE),
-                           digits = 0)) %>%
-  mutate(credit = na.fill(credit, 0)) %>%
+  group_by(id, TICKER) %>%
+  summarise(max = max(Credit, na.rm = TRUE),
+            min = min(Credit, na.rm = TRUE)) %>%
   ungroup() %>%
-  group_by(TICKER, SECTOR) %>%
-  summarise(credit = max(credit, na.rm = TRUE)) %>%
-  mutate(SECTOR = ifelse(credit >= 21, "IG", SECTOR)) %>%
+  group_by(TICKER) %>%
+  summarise(max = max(max, na.rm = TRUE),
+            min = min(min, na.rm = TRUE)) %>%
+  filter(max < 21) %>% 
+  filter(min > 14) %>%
+  left_join(issuer)
   
-  pool <- pool %>% ungroup()
+  
 
-write.xlsx(pool, "pool.xlsx")
+write.xlsx(poo1, "pool.xlsx")
 
 issuer <- read_xlsx("pool.xlsx")
 

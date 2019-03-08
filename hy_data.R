@@ -8,7 +8,7 @@ blpConnect()
 
 data <- function() {
   
-  db <- dbConnect(SQLite(), "hy-property.sqlite")
+  db <- dbConnect(SQLite(), "HY_index.sqlite")
   ID(db)
   Info(db)
   hist_data(db)
@@ -17,7 +17,7 @@ data <- function() {
 
 ID <- function(db){
 
-  ID <- as_tibble(bsrch(paste("FI:", "HY_INDEX", sep = ""))) %>%
+  ID <- as_tibble(bsrch(paste("FI:", "test_3", sep = ""))) %>%
     mutate(ID = as.character(id)) %>% select(ID)
   
   ID <- rbind(ID, dbGetQuery(db, 'SELECT * FROM ID')) %>%
@@ -37,29 +37,30 @@ Info <- function(db){
            MATURITY = as.character(MATURITY),
            ISSUE_DT = as.character(ISSUE_DT),
            CALLED_DT = as.character(CALLED_DT),
-           FIRST_CALL_DT_ISSUANCE = as.character(FIRST_CALL_DT_ISSUANCE)) %>%
-    group_by(MATURITY) %>%
-    arrange(desc(AMT_OUTSTANDING)) %>%
-    ungroup()
-  
+           FIRST_CALL_DT_ISSUANCE = as.character(FIRST_CALL_DT_ISSUANCE),
+           MATURITY = if_else(is.na(CALLED_DT) == TRUE, MATURITY, CALLED_DT),
+           MATURITY = if_else(is.na(MATURITY) == TRUE, 
+                              FIRST_CALL_DT_ISSUANCE, MATURITY))
+    
   Info <- rbind(Info, dbGetQuery(db, 'SELECT * FROM Info')) %>%
     filter(duplicated(ID) == FALSE)
   
   dbWriteTable(db, "Info", Info, overwrite = TRUE)
+  
 }
 
 hist_data <- function(db) {
+  
 ID <- dbGetQuery(db, 'SELECT ID, PRICING_SOURCE, 
-                 ISSUE_DT, MATURITY, CALLED_DT FROM Info') %>%
+                 ISSUE_DT, MATURITY FROM Info') %>%
   mutate(ticker1 = paste(ID, "@BGN", sep = ""),
          issue_date = as.Date(ISSUE_DT),
-         maturity = as.Date(ifelse(is.na(CALLED_DT) == TRUE, MATURITY, CALLED_DT)),
-         ticker2 = paste(ID, "@", PRICING_SOURCE, sep = "")) %>%
+         maturity = as.Date(MATURITY),
+         ticker2 = paste(ID, "@BVAL", sep = "")) %>%
   select(ID, ticker1, ticker2, issue_date, maturity)
 
 key <- c("PX_MID", "PX_BID", "PX_ASK",
-         "Z_SPRD_MID", "DUR_ADJ_OAS_BID",
-         "YLD_YTM_MID", "YLD_YTM_BID", "YLD_YTM_ASK")
+         "Z_SPRD_MID", "DUR_ADJ_OAS_BID", "YLD_YTM_MID")
 
 date01 <- (dbGetQuery(sovdb, 'SELECT date FROM hist_data') %>%
   filter(duplicated(date) == FALSE) %>%
@@ -70,7 +71,7 @@ date02 <- Sys.Date() - 1
 if(date01 > date02) {return()} 
 
 ID <- ID %>%
-  filter(maturity >= date01,
+  filter(maturity >= date01 + 180,
          issue_date <= date02)
 
 data <- getdata(ID$ticker1, key, date01, date02) %>%
@@ -94,7 +95,8 @@ data_new <- data_new %>%
   left_join(ID_new) %>%
   filter(date >= issue_date) %>%
   filter(date <= maturity) %>%
-  select(-ticker1, -ticker2, -issue_date, -maturity)}
+  select(-ticker1, -ticker2, -issue_date, -maturity) %>%
+  filter(is.na(PX_MID) == FALSE)}
 
 data <- data %>% 
   select(-ticker1, -ticker2, -issue_date, -maturity)
@@ -108,9 +110,9 @@ dbWriteTable(db, "hist_data", data, append = TRUE)
 
 getdata <- function(ticker, key , date01, date02) {
   
-  opt <- structure(c("PREVIOUS_VALUE", 
+  opt <- structure(c("PREVIOUS_VALUE",
                      "ALL_CALENDAR_DAYS"),
-                   names = c("nonTradingDayFillMethod", 
+                   names = c("nonTradingDayFillMethod",
                              "nonTradingDayFillOption"))
   
   data0 <- bdh(ticker, key, as.Date(date01), 
@@ -120,7 +122,7 @@ getdata <- function(ticker, key , date01, date02) {
                   names(data0), data0, 
                   USE.NAMES = FALSE, SIMPLIFY = FALSE)
   
-  data2 <- as.tibble(do.call("bind_rows", data1))
+  data2 <- as_tibble(do.call("bind_rows", data1))
   
   return(data2)
 }

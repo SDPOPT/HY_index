@@ -1,4 +1,5 @@
 library(tidyverse)
+library(RQuantLib)
 library(RSQLite)
 library(readxl)
 library(xlsx)
@@ -7,26 +8,36 @@ library(DT)
 library(xts)
 library(formattable)
 
-db <- dbConnect(SQLite(), "hy-property.sqlite")
+db <- dbConnect(SQLite(), "HY_index.sqlite")
 
-bond_pool <- function(db) {
+info <- dbGetQuery(db, "SELECT * FROM Info") %>%
+  mutate(maturity = as.Date(MATURITY)) %>%
+  select(ID, ticker = TICKER, name = SECURITY_SHORT_DES, 
+         coupon = CPN, maturity, amount = AMT_ISSUED)
+
+data <- dbGetQuery(db, "SELECT * FROM hist_data") %>%
+  mutate(date = as.Date(date)) %>%
+  select(date, ID, price = PX_MID) %>%
+  left_join(info) %>%
+  filter(maturity > date) %>%
+  mutate(busday = isBusinessDay("HongKong", date)) %>%
+  filter(busday == "TRUE") %>%
+  mutate(monthend = endOfMonth(calendar = "HongKong", dates = date)) 
+
+monthend <- data %>% 
+  group_by(date, ID) %>%
+  filter(date == monthend) %>%
+  mutate(fraction = yearFraction(date, maturity, 6)) %>%
+  ungroup()
+
+issuer_weight <- weight(monthend)
+
+test <- monthend %>% 
+  left_join(issuer_weight) %>%
+  mutate(bond_weight = ifelse(fraction <= 0.5, 0,
+                              (price * amount / 100) / Cap) * weight)
   
-Bond <- dbGetQuery(db, 'SELECT * FROM Info') %>%
-  mutate(`Moody's` = gsub("(\\*-|\\(|\\)|u|NR|P| |e|WR)", "", RTG_MOODY),
-         `S&P` = gsub("(\\*-|u|NR| )", "", RTG_SP),
-         Amount = AMT_OUTSTANDING / 1000000,
-         Issued = AMT_ISSUED / 1000000,
-         Maturity = as.Date(MATURITY),
-         `1st Call Date` = as.Date(FIRST_CALL_DT_ISSUANCE),
-         `Called Date` = as.Date(CALLED_DT)) %>%
-  select(ID, Name = SECURITY_SHORT_DES,
-         Ticker = TICKER, Coupon = CPN,
-         Maturity,  `1st Call Date`, `Called Date`,
-         Issued, Amount, `S&P`, `Moody's`) %>%
-  arrange(-desc(Ticker), -desc(Maturity))
- 
-return(Bond)
-}
+
 
 index_return <- function(db, date1, date2) {
 
@@ -110,31 +121,6 @@ return <- data %>%
   return(return)
 }
 
-index_spread <- function(db, date1, date2) {
-  
-  date1 <- as.Date(date1)
-  date2 <- as.Date(date2)
-  
-  data <- dbGetQuery(db, sprintf("SELECT date, ID, Z_SPRD_MID 
-                                    FROM hist_data 
-                                    WHERE date(date) 
-                                    BETWEEN date('%s') 
-                                    AND date('%s')", 
-                                    date1 - 1, date2)) %>%
-    mutate(date = as.Date(date)) %>%
-    filter(is.na(Z_SPRD_MID) == FALSE)
-
-  bond <- bond_pool(db) %>% select(ID, Issued)
-  
-  spread <- data %>%
-    left_join(bond) %>%
-    group_by(date) %>%
-    mutate(weight = Issued / sum(Issued)) %>%
-    summarise(spread = sum(Z_SPRD_MID * weight))
-  
-  return(spread)
-  
-}
 
 index_return_plot <- function(return) {
 price_return <- xts(x = return$price_return * 100, 
@@ -150,57 +136,37 @@ dygraph(result, main = "China US HY Index",
 
 }
 
-index_spread_plot <- function(data) {
+weight <- function(data) {
   
-  Spread <- xts(x = data$spread,
-                order.by = data$date)
-  names(Spread) <- "Spread"
+  weight <- data %>%
+    ungroup() %>%
+    group_by(date) %>%
+    mutate(Cap = price * amount / 100,
+           Cap = ifelse(fraction <= 0.5, 0, Cap)) %>%
+    select(date, ticker, Cap) %>%
+    mutate(weight0 = Cap / sum(Cap)) %>%
+    ungroup() %>%
+    group_by(date, ticker) %>%
+    summarise(Cap = sum(Cap),
+              weight = sum(weight0)) %>%
+    arrange(desc(weight)) %>%
+    ungroup()
   
-  dygraph(Spread, main = "China HY Property Spread") %>% dyRangeSelector()
+  while(max(weight$weight) > 0.02){
+    weight <-  weight %>% 
+      group_by(date) %>%
+      mutate(weight0 = pmin(weight, 0.02),
+             weight1 = weight - weight0,
+             weight2 = sum(weight1),
+             weight3 = ifelse(weight0 == 0.02, 0, 1)) %>%
+      ungroup() %>% 
+      group_by(date, weight3) %>%
+      mutate(weight4 = ifelse(weight0 == 0.02, weight0, 
+                              Cap / sum(Cap) * weight2 + weight0)) %>%
+      ungroup() %>%
+      select(date, ticker, Cap, weight = weight4)
+  }
+  
+  return(weight)
 }
 
-index_perform <- function(db, date1, date2) {
-
-date1 <- as.Date(date1)
-date2 <- as.Date(date2)
-
-Bond <- bond_pool(db) %>%
-  filter(Maturity >= date2)
-
-data1 <- dbGetQuery(db, sprintf("SELECT date, ID, PX_MID, Z_SPRD_MID, DUR_ADJ_OAS_BID, YLD_YTM_MID 
-                                   FROM hist_data 
-                                   WHERE date = '%s'", date2)) %>% 
-  mutate(Price = PX_MID,
-         Spread = Z_SPRD_MID,
-         Yield = YLD_YTM_MID,
-         Duration = DUR_ADJ_OAS_BID) %>%
-  select(ID, Price, Spread, Yield, Duration)
-
-data0 <- dbGetQuery(sovdb, sprintf("SELECT date, ID, PX_MID, Z_SPRD_MID 
-                                  FROM hist_data 
-                                  WHERE date = '%s'", date1)) %>%
-  mutate(price = PX_MID,
-         spread = Z_SPRD_MID) %>%
-  select(ID, price, spread)
-
-
-period <- as.numeric(date2 - date1) + 1
-
-Bond <- Bond %>% left_join(data1) %>%
-  left_join(data0) %>%
-  mutate(`Price%` = (Price / price - 1) * 100,
-         `Spread bps` = Spread - spread,
-         `Total%` = (Price / price - 1) * 100 + Coupon / price / 365 * period * 100) %>%
-  filter(is.na(`Price%` ) == FALSE) %>%
-  select(Name, `S&P`, `Moody's`, Price, Yield, Spread, Duration, `Price%`, `Total%`, `Spread bps`) %>%
-  mutate(Price = round(Price, digits = 3),
-         Yield = round(Yield, digits = 3),
-         Spread = round(Spread, digits = 0),
-         Duration = round(Duration, digits = 1),
-         `Price%` = round(`Price%`, digits = 2),
-         `Total%` = round(`Total%`, digits = 2),
-         `Spread bps` = round(`Spread bps`, digits = 0))
-
-return(Bond)
-
-}

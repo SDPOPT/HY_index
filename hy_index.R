@@ -30,13 +30,47 @@ monthend <- data %>%
   mutate(fraction = yearFraction(date, maturity, 6)) %>%
   ungroup()
 
+weight <- function(data) {
+  
+  weight <- data %>%
+    ungroup() %>%
+    group_by(date) %>%
+    mutate(Cap = price * amount / 100,
+           Cap = ifelse(fraction <= 0.5, 0, Cap)) %>%
+    select(date, ticker, Cap) %>%
+    mutate(weight0 = Cap / sum(Cap)) %>%
+    ungroup() %>%
+    group_by(date, ticker) %>%
+    summarise(Cap = sum(Cap),
+              weight = sum(weight0)) %>%
+    arrange(desc(weight)) %>%
+    ungroup()
+  
+  while(max(weight$weight) > 0.02){
+    weight <-  weight %>% 
+      group_by(date) %>%
+      mutate(weight0 = pmin(weight, 0.02),
+             weight1 = weight - weight0,
+             weight2 = sum(weight1),
+             weight3 = ifelse(weight0 == 0.02, 0, 1)) %>%
+      ungroup() %>% 
+      group_by(date, weight3) %>%
+      mutate(weight4 = ifelse(weight0 == 0.02, weight0, 
+                              Cap / sum(Cap) * weight2 + weight0)) %>%
+      ungroup() %>%
+      select(date, ticker, Cap, weight = weight4)
+  }
+  
+  return(weight)
+}
+
 issuer_weight <- weight(monthend)
 
 monthbegin <- monthend %>%
   mutate(monthbegin = monthend) %>%
   select(monthbegin, ID, price0 = price)
 
-monthend <- monthend %>% 
+monthend_weight <- monthend %>% 
   left_join(issuer_weight) %>%
   mutate(bond_weight = ifelse(fraction <= 0.5, 0,
                               (price * amount / 100) / Cap) * weight) %>%
@@ -44,7 +78,7 @@ monthend <- monthend %>%
 
 
 return_index <- data %>%
-  left_join(monthend) %>%
+  left_join(monthend_weight) %>%
   group_by(ID) %>%
   arrange(-desc(date)) %>%
   mutate(weight = lag(weight),
@@ -74,13 +108,13 @@ return_index <- data %>%
   ungroup()
   
 
-monthend <- return_index %>%
+monthend_return <- return_index %>%
   filter(date == monthend) %>%
   mutate(return0 = cumprod(return)) %>%
   select(date, return0)
   
 return_index <- return_index %>%
-  left_join(monthend) %>%
+  left_join(monthend_return) %>%
   mutate(return0 = c(1, return0[1 : (NROW(return0) - 1)]),
          return0 = na.locf(return0)) %>%
   mutate(index = return * return0)

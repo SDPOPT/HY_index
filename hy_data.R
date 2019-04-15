@@ -15,6 +15,32 @@ data <- function() {
 
 }
 
+ticker <- function(db){
+  
+  ticker <- paste( bds("BEUCTRUU Index", "INDX_MEMBERS")[[1]], "Corp", sep = " ")
+  ID_pool <- bdp(ticker, c("TICKER", "CNTRY_OF_RISK",
+                           "RTG_SP", "RTG_MOODY", "RTG_FITCH")) %>% 
+    mutate(ID = ticker,
+           ticker = TICKER,
+           country = CNTRY_OF_RISK,
+           SP = clean(RTG_SP),
+           MOODY = clean(RTG_MOODY),
+           FITCH = clean(RTG_FITCH)) %>%
+    filter(country == "CN") %>%
+    select(ticker, SP, MOODY, FITCH) %>%
+    gather(`MOODY`, `SP`, `FITCH`,
+           key = "agent", value = "RTG") %>%
+    left_join(read_xlsx("credit_mapping.xlsx", col_names = TRUE)) %>%
+    group_by(ticker) %>%
+    summarise(max = max(Credit, na.rm = TRUE),
+              min = min(Credit, na.rm = TRUE)) %>%
+    left_join(read_xlsx("pool.xlsx", col_names = TRUE))
+  
+}
+
+
+
+
 ID <- function(db){
 
   ID <- as_tibble(bsrch(paste("FI:", "test_3", sep = ""))) %>%
@@ -125,4 +151,10 @@ getdata <- function(ticker, key , date01, date02) {
   data2 <- as_tibble(do.call("bind_rows", data1))
   
   return(data2)
+}
+
+clean <- function(RTG) {
+  
+  RTG = gsub("(\\*\\+|\\*|\\*-|\\(|\\)|u|-u|NR|P| |e|WR|WD)", "", RTG)
+  
 }

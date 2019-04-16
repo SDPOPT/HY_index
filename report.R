@@ -1,3 +1,5 @@
+library(formattable)
+
 source("hy_index.R")
 
 weight_chg <- info %>%
@@ -51,3 +53,6 @@ return <- xts(x = return_index$index * 100,
               order.by = return_index$date)
 names(return) <- "index value"
 dygraph(return, main = "China USD HY index") %>% dyRangeSelector()
+
+
+  

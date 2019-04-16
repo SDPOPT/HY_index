@@ -3,6 +3,7 @@ library(Rblpapi)
 library(RSQLite)
 library(DBI)
 library(readxl)
+library(xlsx)
 
 blpConnect()
 
@@ -15,36 +16,11 @@ data <- function() {
 
 }
 
-ticker <- function(db){
-  
-  ticker <- paste( bds("BEUCTRUU Index", "INDX_MEMBERS")[[1]], "Corp", sep = " ")
-  ID_pool <- bdp(ticker, c("TICKER", "CNTRY_OF_RISK",
-                           "RTG_SP", "RTG_MOODY", "RTG_FITCH")) %>% 
-    mutate(ID = ticker,
-           ticker = TICKER,
-           country = CNTRY_OF_RISK,
-           SP = clean(RTG_SP),
-           MOODY = clean(RTG_MOODY),
-           FITCH = clean(RTG_FITCH)) %>%
-    filter(country == "CN") %>%
-    select(ticker, SP, MOODY, FITCH) %>%
-    gather(`MOODY`, `SP`, `FITCH`,
-           key = "agent", value = "RTG") %>%
-    left_join(read_xlsx("credit_mapping.xlsx", col_names = TRUE)) %>%
-    group_by(ticker) %>%
-    summarise(max = max(Credit, na.rm = TRUE),
-              min = min(Credit, na.rm = TRUE)) %>%
-    left_join(read_xlsx("pool.xlsx", col_names = TRUE))
-  
-}
-
-
-
-
 ID <- function(db){
 
-  ID <- as_tibble(bsrch(paste("FI:", "test_3", sep = ""))) %>%
-    mutate(ID = as.character(id)) %>% select(ID)
+  ID <- as_tibble(bsrch(paste("FI:", "test_4", sep = ""))) %>%
+    mutate(ID = as.character(id)) %>% 
+    filter(id != "AQ658246 Corp") %>% select(ID)
   
   ID <- rbind(ID, dbGetQuery(db, 'SELECT * FROM ID')) %>%
   filter(duplicated(ID) == FALSE)
@@ -130,7 +106,7 @@ data <- data %>%
 data <- data %>% filter((ID %in% ID_new$ID) == FALSE) %>% rbind(data_new) %>%
   mutate(date = as.character(date))
 
-dbWriteTable(db, "hist_data", data, append = TRUE)
+dbWriteTable(db, "hist_data", data, overwrite = TRUE)
 
 }
 
@@ -153,8 +129,4 @@ getdata <- function(ticker, key , date01, date02) {
   return(data2)
 }
 
-clean <- function(RTG) {
-  
-  RTG = gsub("(\\*\\+|\\*|\\*-|\\(|\\)|u|-u|NR|P| |e|WR|WD)", "", RTG)
-  
-}
+

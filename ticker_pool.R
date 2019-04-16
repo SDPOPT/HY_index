@@ -4,8 +4,10 @@ library(RSQLite)
 library(DBI)
 library(readxl)
 library(writexl)
+library(WindR)
 
 blpConnect()
+w.start()
 
 
 ticker <- function(){
@@ -69,12 +71,12 @@ onshore_rating <- function() {
     select(ticker, equity_ticker) %>%
     filter(duplicated(equity_ticker) == FALSE)
   
-  onshore <- bdp(equity, c("RTG_DAGONG_LT_LOCAL_CRNCY_ISSUER",
+  onshore <- bdp(ID$equity_ticker, c("RTG_DAGONG_LT_LOCAL_CRNCY_ISSUER",
                            "RTG_CHENGXIN_LC_ISSUER",
                            "RTG_LIANHE_LT_LC_ISSUER",
                            "RTG_SBCR_LT_LC_ISSUER",
                            "RTG_CCRC_ISSUER")) %>%
-    mutate(equity_ticker = equity,
+    mutate(equity_ticker = ID$equity_ticker,
            DAGONG = clean(RTG_DAGONG_LT_LOCAL_CRNCY_ISSUER),
            CHENGXIN = clean(RTG_CHENGXIN_LC_ISSUER),
            LIANHE = clean(RTG_LIANHE_LT_LC_ISSUER),
@@ -88,11 +90,41 @@ onshore_rating <- function() {
     summarise(credit_max = max(Credit, na.rm = TRUE),
               credit_min = min(Credit, na.rm = TRUE)) %>%
     ungroup() %>%
-    left_join(ID)
+    left_join(ID) %>%
+    select(-equity_ticker)
   
-write_xlsx(onshore, "onshore_rating.xlsx")
 
+  ID1 <- bsrch("FI:test_5") %>% 
+    mutate(ID = as.character(id)) %>%
+    select(ID) %>%
+    mutate(ticker = bdp(ID, "TICKER")$TICKER,
+           ID = bdp(ID, "ID_SHORT_CODE")$ID_SHORT_CODE)
   
+  
+  onshore1 <- w.wss(paste(unique(ID2$ID), collapse = ","), 'latestissurercreditrating')[[2]] %>%
+    select(ID = CODE, RTG = LATESTISSURERCREDITRATING) %>%
+    filter(RTG != "NaN") %>%
+    left_join(ID2) %>% 
+    left_join(onshore_credit_mapping) %>%
+    group_by(ticker) %>%
+    summarise(credit_max = max(Credit, na.rm = TRUE),
+              credit_min = min(Credit, na.rm = TRUE)) %>%
+    ungroup()
+  
+  onshore1 <- onshore %>%
+    filter(is.infinite(credit_min) == TRUE) %>%
+    select(ticker) %>%
+    left_join(onshore1)
+  
+  onshore <- onshore %>%
+    filter(is.infinite(credit_min) != TRUE) %>%
+    rbind(onshore1) %>%  
+    mutate(Credit = credit_max) %>%
+    left_join(onshore_credit_mapping) %>%
+    select(ticker, RTG)
+  
+  write_xlsx(onshore, "onshore_rating.xlsx")
+
 }
 
 clean <- function(RTG) {

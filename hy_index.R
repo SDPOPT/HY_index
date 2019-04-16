@@ -204,12 +204,14 @@ portfolio <- bdp(port_weight$ID, c("SECURITY_SHORT_DES", "TICKER",
          duration = digits(YAS_MOD_DUR, 1)) %>% 
   left_join(port_weight) %>%
   mutate(weight = percent(weight, digits = 2)) %>%
-  select(ID, ticker, name, weight, price, yield, duration) %>%
+  left_join(dbGetQuery(db, "SELECT * FROM onshore_rating")) %>%
+  mutate(onshore_rating = RTG) %>%
+  select(ID, ticker, name, weight, price, yield, duration, onshore_rating) %>%
   left_join(read_xlsx("ticker_pool.xlsx")) %>%
   mutate(Credit = as.numeric(min)) %>%
   left_join(dbGetQuery(db, "SELECT * FROM mapping_credit")) %>%
   mutate(rating = ifelse(is.infinite(Credit) == TRUE, "unrated", RTG)) %>%
-  select(ID, ticker, name, weight, sector, price, yield, duration, rating)
+  select(ID, ticker, name, weight, sector, price, yield, duration, rating, onshore_rating)
 
 rating <- portfolio %>% 
   group_by(rating) %>% 
@@ -226,6 +228,10 @@ sector <- portfolio %>%
 summary <- portfolio %>%
   summarise(yield = sum(yield * weight),
             duration = sum(duration * weight))
+
+onshore_rating <- portfolio %>% 
+  group_by(onshore_rating) %>% 
+  summarise(weight = sum(weight))
 
 }
 

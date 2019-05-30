@@ -7,11 +7,13 @@ library(dygraphs)
 library(DT)
 library(xts)
 library(formattable)
+library(Rblpapi)
+blpConnect()
 
 weight <- function(data, limit) {
   
   data <- data %>%
-    filter(fraction <= 3)
+    filter(fraction <= 2)
   
   weight <- data %>%
     ungroup() %>%
@@ -51,7 +53,7 @@ db <- dbConnect(SQLite(), "HY_index.sqlite")
 info <- dbGetQuery(db, "SELECT * FROM Info") %>%
   mutate(maturity = as.Date(MATURITY)) %>%
   select(ID, ticker = TICKER, name = SECURITY_SHORT_DES, 
-         coupon = CPN, maturity, amount = AMT_ISSUED)
+         coupon = CPN, maturity, amount = AMT_OUTSTANDING)
 
 data <- dbGetQuery(db, "SELECT * FROM hist_data") %>%
   mutate(date = as.Date(date)) %>%
@@ -84,8 +86,8 @@ monthbegin <- data %>%
 monthend_weight <- function(data) {
   
 monthend_weight <- data %>% 
-  left_join(weight(data, 0.04)) %>%
-  mutate(bond_weight = ifelse(fraction > 3, 0,
+  left_join(weight(data, 0.05)) %>%
+  mutate(bond_weight = ifelse(fraction > 2, 0,
            (price * amount / 100) / Cap * weight)) %>%
   select(date, ID, weight = bond_weight)
 
@@ -139,14 +141,9 @@ return_index <- return_index %>%
 weight_old <- function(data) {
   
   weight <- data %>%
-    ungroup() %>%
-    group_by(date) %>%
-    mutate(Cap = price * amount / 100,
-           Cap = ifelse(fraction <= 0.5, 0, Cap)) %>%
-    select(date, ticker, Cap) %>%
+    mutate(Cap = price * amount / 100) %>%
     mutate(weight0 = Cap / sum(Cap)) %>%
-    ungroup() %>%
-    group_by(date, ticker) %>%
+    group_by(ticker) %>%
     summarise(Cap = sum(Cap),
               weight = sum(weight0)) %>%
     arrange(desc(weight)) %>%
@@ -154,17 +151,16 @@ weight_old <- function(data) {
   
   while(max(weight$weight) > 0.02){
     weight <-  weight %>% 
-      group_by(date) %>%
       mutate(weight0 = pmin(weight, 0.02),
              weight1 = weight - weight0,
              weight2 = sum(weight1),
              weight3 = ifelse(weight0 == 0.02, 0, 1)) %>%
       ungroup() %>% 
-      group_by(date, weight3) %>%
+      group_by(weight3) %>%
       mutate(weight4 = ifelse(weight0 == 0.02, weight0, 
                               Cap / sum(Cap) * weight2 + weight0)) %>%
       ungroup() %>%
-      select(date, ticker, Cap, weight = weight4)
+      select(ticker, Cap, weight = weight4)
   }
   
   return(weight)

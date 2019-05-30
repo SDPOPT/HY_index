@@ -22,9 +22,6 @@ ID <- function(db){
     mutate(ID = as.character(id)) %>% 
     filter(id != "AQ658246 Corp") %>% select(ID)
   
-  ID <- rbind(ID, dbGetQuery(db, 'SELECT * FROM ID')) %>%
-  filter(duplicated(ID) == FALSE)
-  
   dbWriteTable(db, "ID", ID, overwrite = TRUE)
   
 }
@@ -43,9 +40,6 @@ Info <- function(db){
            MATURITY = if_else(is.na(CALLED_DT) == TRUE, MATURITY, CALLED_DT),
            MATURITY = if_else(is.na(MATURITY) == TRUE, 
                               FIRST_CALL_DT_ISSUANCE, MATURITY))
-    
-  Info <- rbind(Info, dbGetQuery(db, 'SELECT * FROM Info')) %>%
-    filter(duplicated(ID) == FALSE)
   
   dbWriteTable(db, "Info", Info, overwrite = TRUE)
   
@@ -64,17 +58,8 @@ ID <- dbGetQuery(db, 'SELECT ID, PRICING_SOURCE,
 key <- c("PX_MID", "PX_BID", "PX_ASK",
          "Z_SPRD_MID", "DUR_ADJ_OAS_BID", "YLD_YTM_MID")
 
-date01 <- (dbGetQuery(sovdb, 'SELECT date FROM hist_data') %>%
-  filter(duplicated(date) == FALSE) %>%
-  mutate(date = as.Date(date)) %>%
-  arrange(desc(date)))$date[1] +  1
+date01 <- Sys.Date() - 30
 date02 <- Sys.Date() - 1
-
-if(date01 > date02) {return()} 
-
-ID <- ID %>%
-  filter(maturity >= date01 + 180,
-         issue_date <= date02)
 
 data <- getdata(ID$ticker1, key, date01, date02) %>%
   mutate(ticker1 = ID) %>%

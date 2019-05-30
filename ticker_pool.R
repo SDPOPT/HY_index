@@ -5,20 +5,15 @@ library(DBI)
 library(readxl)
 library(writexl)
 library(WindR)
+library(RSQLite)
 
 blpConnect()
 w.start()
 
-
 ticker <- function(){
   
   db <- dbConnect(SQLite(), "HY_index.sqlite")
-  
-  pool_ticker <- read_xlsx("ticker_pool.xlsx", col_names = TRUE)
-  dbWriteTable(db, "pool_ticker", pool_ticker, overwrite = TRUE)
   credit_mapping <- dbGetQuery(db, "SELECT * FROM credit_mapping")
-  pool_ticker <- pool_ticker %>%
-    select(ticker, sector)
   
   
   ticker <- paste( bds("BEUCTRUU Index", "INDX_MEMBERS")[[1]], "Corp", sep = " ")
@@ -30,12 +25,11 @@ ticker <- function(){
            SP = clean(RTG_SP),
            MOODY = clean(RTG_MOODY),
            FITCH = clean(RTG_FITCH)) %>%
-    filter(country == "CN") %>%
-    select(ticker, SP, MOODY, FITCH) %>%
+    select(ticker, SP, MOODY, FITCH, country) %>%
     gather(`MOODY`, `SP`, `FITCH`,
            key = "agent", value = "RTG") %>%
     left_join(credit_mapping) %>%
-    group_by(ticker) %>%
+    group_by(ticker, country) %>%
     summarise(max = max(Credit, na.rm = TRUE),
               min = min(Credit, na.rm = TRUE)) %>%
     ungroup()

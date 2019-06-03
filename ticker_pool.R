@@ -8,12 +8,13 @@ library(WindR)
 library(RSQLite)
 
 blpConnect()
-w.start()
+w.start(showmenu = FALSE)
 
 ticker <- function(){
   
   db <- dbConnect(SQLite(), "HY_index.sqlite")
-  credit_mapping <- dbGetQuery(db, "SELECT * FROM credit_mapping")
+  issuer_china <- dbReadTable(db, "issuer_china")
+  credit_mapping <- dbReadTable(db, "credit_mapping")
   
   
   ticker <- paste( bds("BEUCTRUU Index", "INDX_MEMBERS")[[1]], "Corp", sep = " ")
@@ -34,19 +35,25 @@ ticker <- function(){
               min = min(Credit, na.rm = TRUE)) %>%
     ungroup()
   
-  rated <- ticker_pool %>%
+  china_issuer <- ticker_pool %>%
+    filter(country  == "CN") %>%
+    left_join(issuer_china) %>%
+    filter(is.na(sector) == TRUE)
+  
+  issuer_china <- rbind(issuer_china, china_issuer) %>%
+    filter(duplicated(ticker) == FALSE)
+  
+  nonchina_issuer <- ticker_pool %>%
+    filter(country  != "CN") %>%
     filter(is.infinite(max) == FALSE) %>%
-    left_join(pool_ticker) %>%
-    mutate(sector = ifelse(min >= 21, "IG", sector)) %>%
-    mutate(sector = ifelse(min <= 14, "Black", sector))
+    filter(min < 21) %>%
+    filter(min > 14) %>%
+    mutate(sector = "NON CHINA") %>%
+    select(ticker, sector)
   
-  unrated <- ticker_pool %>%
-    filter(is.infinite(max) == TRUE) %>%
-    left_join(pool_ticker)
+  issuer_nonchina <- rbind(issuer_nonchina, nonchina_issuer)
   
-  ticker_pool <- rbind(rated, unrated)
   
-  dbWriteTable(db, "ticker_pool", ticker_pool, overwrite = TRUE)
   write_xlsx(ticker_pool, "ticker_pool.xlsx")
   
 }

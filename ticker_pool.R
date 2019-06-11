@@ -14,19 +14,24 @@ ticker <- function(){
   
   db <- dbConnect(SQLite(), "HY_index.sqlite")
   issuer_china <- dbReadTable(db, "issuer_china")
+  issuer_nonchina <- dbReadTable(db, "issuer_nonchina")
   credit_mapping <- dbReadTable(db, "credit_mapping")
+  mapping_credit <- dbReadTable(db, "mapping_credit")
   
   
   ticker <- paste( bds("BEUCTRUU Index", "INDX_MEMBERS")[[1]], "Corp", sep = " ")
   ticker_pool <- bdp(ticker, c("TICKER", "CNTRY_OF_RISK",
-                           "RTG_SP", "RTG_MOODY", "RTG_FITCH")) %>%
+                           "RTG_SP", "RTG_MOODY", "RTG_FITCH", 
+                           "BASEL_III_DESIGNATION", "PAYMENT_RANK")) %>%
     mutate(ID = ticker,
            ticker = TICKER,
            country = CNTRY_OF_RISK,
            SP = clean(RTG_SP),
            MOODY = clean(RTG_MOODY),
            FITCH = clean(RTG_FITCH)) %>%
-    select(ticker, SP, MOODY, FITCH, country) %>%
+    filter(BASEL_III_DESIGNATION == "") %>%
+    filter(grepl("Subordinated", PAYMENT_RANK) == FALSE) %>%
+    select(ID, ticker, SP, MOODY, FITCH, country) %>%
     gather(`MOODY`, `SP`, `FITCH`,
            key = "agent", value = "RTG") %>%
     left_join(credit_mapping) %>%
@@ -40,21 +45,16 @@ ticker <- function(){
     left_join(issuer_china) %>%
     filter(is.na(sector) == TRUE)
   
-  issuer_china <- rbind(issuer_china, china_issuer) %>%
-    filter(duplicated(ticker) == FALSE)
-  
-  nonchina_issuer <- ticker_pool %>%
+  issuer_nonchina <- ticker_pool %>%
     filter(country  != "CN") %>%
     filter(is.infinite(max) == FALSE) %>%
-    filter(min < 21) %>%
+    filter(max < 21) %>%
     filter(min > 14) %>%
     mutate(sector = "NON CHINA") %>%
     select(ticker, sector)
   
-  issuer_nonchina <- rbind(issuer_nonchina, nonchina_issuer)
   
-  
-  write_xlsx(ticker_pool, "ticker_pool.xlsx")
+  write_xlsx(rbind(issuer_china, issuer_nonchina), "ticker_pool.xlsx")
   
 }
 

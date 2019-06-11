@@ -53,7 +53,18 @@ db <- dbConnect(SQLite(), "HY_index.sqlite")
 info <- dbGetQuery(db, "SELECT * FROM Info") %>%
   mutate(maturity = as.Date(MATURITY)) %>%
   select(ID, ticker = TICKER, name = SECURITY_SHORT_DES, 
-         coupon = CPN, maturity, amount = AMT_OUTSTANDING)
+         coupon = CPN, amount = AMT_OUTSTANDING)
+
+data <- bdp(info$ID, c("MATURITY", "YAS_BOND_YLD", "YAS_BOND_PX")) %>%
+  mutate(ID = info$ID,
+         maturity = MATURITY,
+         yield = YAS_BOND_YLD,
+         price = YAS_BOND_PX) %>%
+  select(ID, price, yield, maturity)
+
+info <- info %>%
+  left_join(data) %>%
+  filter(yield >= 4)
 
 data <- dbGetQuery(db, "SELECT * FROM hist_data") %>%
   mutate(date = as.Date(date)) %>%
@@ -138,7 +149,7 @@ return_index <- return_index %>%
 
 }
 
-weight_old <- function(data) {
+weight_old <- function(data, limit) {
   
   weight <- data %>%
     mutate(Cap = price * amount / 100) %>%
@@ -149,15 +160,15 @@ weight_old <- function(data) {
     arrange(desc(weight)) %>%
     ungroup()
   
-  while(max(weight$weight) > 0.02){
+  while(max(weight$weight) > limit){
     weight <-  weight %>% 
-      mutate(weight0 = pmin(weight, 0.02),
+      mutate(weight0 = pmin(weight, limit),
              weight1 = weight - weight0,
              weight2 = sum(weight1),
-             weight3 = ifelse(weight0 == 0.02, 0, 1)) %>%
+             weight3 = ifelse(weight0 == limit, 0, 1)) %>%
       ungroup() %>% 
       group_by(weight3) %>%
-      mutate(weight4 = ifelse(weight0 == 0.02, weight0, 
+      mutate(weight4 = ifelse(weight0 == limit, weight0, 
                               Cap / sum(Cap) * weight2 + weight0)) %>%
       ungroup() %>%
       select(ticker, Cap, weight = weight4)
@@ -223,10 +234,11 @@ sector <- portfolio %>%
 
 summary <- portfolio %>%
   summarise(yield = sum(yield * weight),
-            duration = sum(duration * weight))
+            duration = sum(duration * weight),
+            rating = sum(credit * weight))
 
 onshore_rating <- portfolio %>% 
-  group_by(onshore_rating) %>% 
+  group_by(RTG) %>% 
   summarise(weight = sum(weight))
 
 }

@@ -21,14 +21,14 @@ ticker <- function(){
   
   ticker <- paste( bds("BEUCTRUU Index", "INDX_MEMBERS")[[1]], "Corp", sep = " ")
   ticker_pool <- bdp(ticker, c("TICKER", "CNTRY_OF_RISK",
-                           "RTG_SP", "RTG_MOODY", "RTG_FITCH", 
+                           "RTG_SP_NO_WATCH", "RTG_MOODY_NO_WATCH", "RTG_FITCH_NO_WATCH", 
                            "BASEL_III_DESIGNATION", "PAYMENT_RANK")) %>%
     mutate(ID = ticker,
            ticker = TICKER,
            country = CNTRY_OF_RISK,
-           SP = clean(RTG_SP),
-           MOODY = clean(RTG_MOODY),
-           FITCH = clean(RTG_FITCH)) %>%
+           SP = clean(RTG_SP_NO_WATCH),
+           MOODY = clean(RTG_MOODY_NO_WATCH),
+           FITCH = clean(RTG_FITCH_NO_WATCH)) %>%
     filter(BASEL_III_DESIGNATION == "") %>%
     filter(grepl("Subordinated", PAYMENT_RANK) == FALSE) %>%
     select(ID, ticker, SP, MOODY, FITCH, country) %>%

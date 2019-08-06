@@ -18,7 +18,7 @@ data <- function() {
 
 ID <- function(db){
 
-  ID <- as_tibble(bsrch(paste("FI:", "test_4_LGFV", sep = ""))) %>%
+  ID <- as_tibble(bsrch(paste("FI:", "CIB_Index", sep = ""))) %>%
     mutate(ID = as.character(id)) %>% 
     filter(id != "AQ658246 Corp") %>% select(ID)
   

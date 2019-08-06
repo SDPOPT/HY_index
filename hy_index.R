@@ -49,6 +49,14 @@ weight <- function(data, limit) {
 data <- function() {
 
 db <- dbConnect(SQLite(), "HY_index.sqlite")
+issuer_china <- dbReadTable(db, "issuer_china")
+issuer_nonchina <- dbReadTable(db, "issuer_nonchina")
+issuer <- rbind(issuer_china, issuer_nonchina)
+credit_mapping <- dbReadTable(db, "credit_mapping")
+mapping_credti <- dbReadTable(db, "mapping_credit")
+onshore_credit_mapping <- dbReadTable(db, "onshore_credit_mapping")
+onshore_rating <- dbReadTable(db, "onshore_rating")
+
 
 info <- dbGetQuery(db, "SELECT * FROM Info") %>%
   mutate(maturity = as.Date(MATURITY)) %>%
@@ -64,7 +72,8 @@ data <- bdp(info$ID, c("MATURITY", "YAS_BOND_YLD", "YAS_BOND_PX")) %>%
 
 info <- info %>%
   left_join(data) %>%
-  filter(yield >= 4)
+  filter(yield >= 4) %>%
+  left_join()
 
 data <- dbGetQuery(db, "SELECT * FROM hist_data") %>%
   mutate(date = as.Date(date)) %>%

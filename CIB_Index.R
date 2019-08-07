@@ -129,14 +129,22 @@ return(port_weight)
 
 port_report <- function() {
   
-  port <- data()
+  db <- dbConnect(SQLite(), "HY_index.sqlite")
+  
+  port <- data() %>%
+    filter(ticker != "CHIWIN") %>%
+    filter(ticker != "ROADKG")
   
   weight_port <- port_weight(port)
   
   port <- port %>%
+    filter(sector != "PROPERTY") %>%
     left_join(weight_port) %>%
-    mutate(weight = weight * price * amount / 100 / Cap) %>%
-    select(-Cap)
+    group_by(ticker) %>%
+    filter(yield == max(yield, na.rm = TRUE)) %>%
+    mutate(weight = round(weight * 200, digits = 1) / 100) %>%
+    select(-Cap) %>%
+    ungroup()
   
   issuer <- port %>%
     group_by(sector, ticker) %>%
@@ -153,7 +161,16 @@ port_report <- function() {
   sector <- port %>%
     group_by(sector) %>%
     summarise(weight = sum(weight))
-    
+  
+  port_summary <- port %>%
+    summarise(yield = sum(weight * yield, na.rm = TRUE),
+              duration = sum(weight * duration, na.rm = TRUE),
+              Credit = round(sum(weight * Credit, na.rm = TRUE), digits = 0)) %>%
+    left_join(dbReadTable(db, "mapping_credit"))
+  
+  
+  write.xlsx(port, "CIB_Index.xlsx", sheetName = "port")
+  write.xlsx(port_summary, "CIB_Index.xlsx", sheetName = "summary", append = TRUE)
   
   
 }
